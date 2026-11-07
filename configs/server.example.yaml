@@ -1,0 +1,42 @@
+data_root: /data/backup/1h1
+output_root: /data/work/runs
+gpus:
+  - cuda:0
+  - cuda:1
+gpu_workers:
+  cuda:0: 1
+  cuda:1: 1
+cpu_workers: 8
+quality:
+  pptx_rms_diagonal: 0.02
+  pptx_p95_diagonal: 0.03
+  pptx_inlier_ratio: 0.75
+  affine_condition_number: 100.0
+  dicom_confidence: 0.60
+  dicom_candidate_margin: 0.05
+  drr_roi_ncc: 0.35
+  drr_gradient_ncc: 0.35
+  drr_objective_improvement: 0.03
+  pose_translation_spread_mm: 15.0
+  pose_rotation_spread_deg: 7.0
+  fov_iou: 0.50
+registration:
+  random_seed: 20260809
+  resolutions: [256, 512]
+  coarse_iterations: 30
+  refine_iterations: 80
+  multistart_count: 12
+  refine_top_k: 3
+  roi_method: baseline
+  rotation_learning_rate_deg: 1.5
+  translation_learning_rate_mm: 3.0
+  rotation_bounds_deg:
+    - [-180.0, 180.0]
+    - [-180.0, 180.0]
+    - [-180.0, 180.0]
+  translation_bounds_mm:
+    - [-500.0, 500.0]
+    - [300.0, 1500.0]
+    - [-500.0, 500.0]
+anonymize_reports: true
+fail_on_review: false

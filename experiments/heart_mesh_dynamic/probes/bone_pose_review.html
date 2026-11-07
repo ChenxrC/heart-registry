@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CT–XA 静态骨性位姿复核</title>
+<link rel="icon" href="data:,">
+<style>
+:root{color-scheme:dark;font-family:"Microsoft YaHei",sans-serif;background:#0d1822;color:#e4edf5}body{margin:0;padding:22px;max-width:1680px;margin:auto}h1{font-size:25px;margin:0 0 12px}h2{font-size:18px}p{line-height:1.65}.warning{background:#352a18;border-left:4px solid #f3bd58;padding:12px 16px;color:#ffdc99}.controls{display:flex;flex-wrap:wrap;gap:14px;align-items:center;padding:16px 0}select,button,input{background:#203443;border:1px solid #516b80;color:#edf6ff;border-radius:5px;padding:9px;font:inherit}button{cursor:pointer}button:hover{background:#304e63}label{display:inline-flex;gap:7px;align-items:center}.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.card{background:#162633;border:1px solid #304758;border-radius:7px;padding:12px}.card h2{margin:0 0 10px}.card p{font-size:13px;color:#b9c9d6}.image{position:relative;background:#000;aspect-ratio:1}canvas,.image img{display:block;width:100%;height:100%;object-fit:contain}canvas{touch-action:none;cursor:crosshair}#overlay{cursor:default}#context{max-width:500px;height:auto}.row{display:flex;gap:24px;align-items:start;flex-wrap:wrap}.row>.card{flex:1;min-width:310px}#status{min-height:28px;color:#ffdc99;line-height:1.6}.muted{color:#a6bac9;font-size:13px}.tag{color:#6de2df}table{border-collapse:collapse;width:100%;font-size:13px}td,th{padding:7px;border-bottom:1px solid #344b5c;text-align:left}details{margin:15px 0}summary{cursor:pointer}.refs{display:flex;gap:18px;flex-wrap:wrap}.refs img{width:min(45%,360px);height:auto}code{overflow-wrap:anywhere}#progress{color:#87d1ff}@media(max-width:1000px){.grid{grid-template-columns:1fr}.image{max-width:650px;margin:auto}body{padding:12px}}
+</style>
+<h1>先核对骨骼，再讨论心脏动态形变</h1>
+<div class="warning">科研复核页：两套相机均未验收。本页不改旧位姿、不拟合心脏，也不会导出“已通过配准”矩阵。彩线来自 CT 模型，不是自动找到的 XA 骨边缘。</div>
+<div class="controls">
+<label>序列 <select id="series"></select></label>
+<label>相机 <select id="camera"><option value="inherited">继承的 S7 初始化</option><option value="static_candidate">此前仅 u/v 平移候选（未验收）</option></select></label>
+<label>DRR 叠加强度 <input id="opacity" type="range" min="0" max="1" value="0.35" step="0.05"></label>
+<label><input type="checkbox" id="guides" checked>显示 CT 逐椎骨轮廓</label>
+<button id="blink">按住：仅看原始 XA</button>
+</div>
+<div class="grid">
+<section class="card"><h2>① 原始 XA · 在此描可见骨缘</h2><div class="image"><canvas id="raw" width="512" height="512"></canvas></div><p id="frameInfo"></p><p>在原图点击至少两点；只描同一椎骨可辨认的外缘弧段。不要沿右侧 CT 彩线照抄。CT 标签涵盖整块椎骨（含附件），不是单独椎体；只选范围一致、确实看得清的部分。</p></section>
+<section class="card"><h2>② CT 骨性 DRR</h2><div class="image"><img id="drr" alt="当前相机的骨性密度代理投影"></div><p>从同一 CT 的骨密度代理沿射线积分：clip((HU−150)/1000, 0, 3)。无表面光照；不是已标定的 Beer–Lambert 透射率，不按它计算全图灰度配准精度。</p></section>
+<section class="card"><h2>③ 同一像素坐标叠加</h2><div class="image"><canvas id="overlay" width="512" height="512"></canvas></div><p>核对左右、上下、肋骨走向与椎骨位置。若大量骨骼错位，应处理静态几何，不能拉伸心脏去补偿。出视野部分不是不存在的骨骼。</p></section>
+</div>
+<div class="row" style="margin-top:16px">
+<section class="card"><h2>同名结构复核 · 仅当前锚帧</h2>
+<p>先通过 CT 上下文辨认椎骨编号。原有 PPT 的 T1/T2、Z/Q 只对应定位像与 S7，不能直接当成 S1/S2 的新标签。认不出具体编号时，请选“编号不确定”，不要猜。</p>
+<div class="controls"><label>骨骼 <select id="structure"></select></label><span id="split" class="tag"></span><label>复核人 <input id="reviewer" type="text" maxlength="80" placeholder="姓名或代号"></label></div>
+<p><label><input id="confirmed" type="checkbox">已独立确认原图弧段与 CT 标签属于同一块椎骨</label></p>
+<div class="controls"><button id="undo">撤销末点</button><button id="save">保存可见弧段</button><button id="unknown">看不清／出视野</button><button id="uncertain">编号不确定</button><button id="clear">清除此项</button></div>
+<p id="status" role="status"></p><p id="progress"></p>
+<button id="export">导出复核 JSON</button>
+<p class="muted">奇数椎骨预先分配为拟合集、偶数为留出集；本轮只收集和描述，不据留出结果选相机。少量部分边缘不能证明完整三维位姿。看不清可保留缺失；无需重做 PPT。</p>
+<details><summary>已保存的复核项</summary><table><thead><tr><th>序列</th><th>骨骼</th><th>划分</th><th>状态</th><th>点数</th></tr></thead><tbody id="items"></tbody></table></details>
+</section>
+<section class="card"><h2>CT 椎骨投影上下文（扩大视野）</h2><img id="context" alt="CT椎骨及原始视野框"><p>白框表示原始 XA 视野。这里只扩大视野，不移动相机。编号位置由三维体积中心投影生成，仅作 CT 标签导引，不是二维区域中心、更不是已确认的同名点。</p><div id="geometry"></div></section>
+</div>
+<details><summary>原有医生 PPT 两页参考（定位像 ↔ S7，不是当前序列真值）</summary><p>原有标注保留并复用为编号与来源线索。S1/S2 为不同角度与视野，须独立核对。</p><div class="refs" id="refs"></div></details>
+<p class="muted">标签轮廓由既有 CT 分割经 step=2 marching cubes 投影，属于近似整椎骨外缘。未标注位置不是背景；本页不计算完整 Dice、临床误差、三维 TRE。原生像素 0 起始，x=列、y=行；显示缩放不改变保存坐标。</p>
+<p class="muted">结果包标识：<code id="packId"></code>。复核数据只在当前页面内存中，关闭前请导出。</p>
+<script src="data.js"></script><script>
+'use strict';
+(async()=>{try{
+if(!globalThis.crypto?.subtle)throw new Error('浏览器不支持图像材料摘要核验；请从本机 HTTP 地址打开。');
+const materialBytes=Uint8Array.from(atob(window.BONE_REVIEW_B64),c=>c.charCodeAt(0));
+const displayDigest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',materialBytes)),b=>b.toString(16).padStart(2,'0')).join('');
+const D=JSON.parse(new TextDecoder().decode(materialBytes));D.pack_id=window.BONE_REVIEW_PACK_ID;D.display_material_sha256=displayDigest;window.BONE_REVIEW_DATA=D;
+const $=id=>document.getElementById(id),raw=$('raw'),overlay=$('overlay'),obs=new Map(),images=new Map();
+let points=[],blinking=false,epoch=0;
+const run=()=>D.series.find(s=>s.run_id===$('series').value),structure=()=>D.structures.find(s=>s.id===$('structure').value),key=()=>run().run_id+'__'+structure().id;
+for(const r of D.series){const o=new Option(r.run_id,r.run_id);$('series').add(o)}
+for(const s of D.structures)$('structure').add(new Option(s.id,s.id));
+$('structure').value='T5';$('packId').textContent=D.pack_id;
+async function img(url){if(!images.has(url)){images.set(url,new Promise((resolve,reject)=>{const i=new Image();i.onload=()=>resolve(i);i.onerror=reject;i.src=url}))}return images.get(url)}
+function status(s){$('status').textContent=s}
+function refreshSelection(){points=(obs.get(key())?.xy_px||[]).map(p=>p.slice());$('confirmed').checked=false;$('split').textContent=structure().split==='fit'?'拟合结构（预先固定）':'留出结构（不参与选择/拟合）';status('在左侧原图点击描弧；确认同名后保存，或记录不可辨认。');draw()}
+async function draw(){const e=++epoch,r=run(),p=D.projections.find(p=>p.run_id===r.run_id&&p.camera_id===$('camera').value);const [xa,drr,guide]=await Promise.all([img(r.xa),img(p.drr),img(p.guide)]);if(e!==epoch)return;const c=raw.getContext('2d'),v=overlay.getContext('2d');c.clearRect(0,0,512,512);c.drawImage(xa,0,0);v.globalAlpha=1;v.drawImage(xa,0,0);if(!blinking){v.globalAlpha=+$('opacity').value;v.drawImage(drr,0,0);v.globalAlpha=1;if($('guides').checked)v.drawImage(guide,0,0)}if(points.length){c.strokeStyle='#ffb96e';c.lineWidth=1.5;c.beginPath();points.forEach(([x,y],i)=>i?c.lineTo(x+.5,y+.5):c.moveTo(x+.5,y+.5));c.stroke();c.fillStyle='#ff6c65';for(const [x,y]of points){c.beginPath();c.arc(x+.5,y+.5,2.5,0,Math.PI*2);c.fill()}}$('drr').src=p.drr;$('context').src=p.context;$('frameInfo').textContent=`${r.run_id} · 帧 ${r.frame_index}（0 起始）· 固定静态复核帧，不是心动相位标签`;
+const visible=p.bone_reports.filter(b=>b.in_fov_pixels>0).map(b=>b.structure_id);$('geometry').textContent='模型在视野内有像素的椎骨：'+(visible.join('、')||'无')+'。这不代表 XA 中已辨认出了这些编号。';}
+raw.addEventListener('pointerdown',e=>{const b=raw.getBoundingClientRect();points.push([Math.max(0,Math.min(511,(e.clientX-b.left)*512/b.width-.5)),Math.max(0,Math.min(511,(e.clientY-b.top)*512/b.height-.5))]);$('confirmed').checked=false;draw()});
+function updateList(){const body=$('items');body.replaceChildren();for(const item of obs.values()){const row=document.createElement('tr');for(const value of[item.run_id,item.structure_id,item.split,item.review_state,item.xy_px.length]){const td=document.createElement('td');td.textContent=String(value);row.append(td)}body.append(row)}const count=[...obs.values()].filter(x=>x.review_state==='confirmed_visible_edge').length;$('progress').textContent=`已复核 ${obs.size}/${D.series.length*D.structures.length} 项，其中可见同名弧段 ${count} 项；缺失不记作零误差。`}
+function save(state){const length=points.reduce((sum,p,i)=>sum+(i?Math.hypot(p[0]-points[i-1][0],p[1]-points[i-1][1]):0),0);if(state==='confirmed_visible_edge'&&(points.length<2||length<1||!$('confirmed').checked||!$('reviewer').value.trim())){status('需要至少两点且弧长≥1像素、填写复核人，并独立确认同名结构；请勿依据模型线直接生成标签。');return}obs.set(key(),{run_id:run().run_id,frame_index:run().frame_index,structure_id:structure().id,split:structure().split,review_state:state,identity_confirmed:state==='confirmed_visible_edge',xy_px:state==='confirmed_visible_edge'?points.map(p=>p.slice()):[],source:'human_review_on_raw_XA_not_model_generated'});if(state!=='confirmed_visible_edge')points=[];updateList();draw();status('已暂存本项。关闭页面前请导出 JSON。')}
+$('save').onclick=()=>save('confirmed_visible_edge');$('unknown').onclick=()=>save('unknown');$('uncertain').onclick=()=>save('identity_uncertain');$('undo').onclick=()=>{points.pop();$('confirmed').checked=false;draw()};$('clear').onclick=()=>{obs.delete(key());points=[];$('confirmed').checked=false;updateList();draw();status('已清除当前复核项。')};
+$('series').onchange=refreshSelection;$('structure').onchange=refreshSelection;$('camera').onchange=draw;$('opacity').oninput=draw;$('guides').onchange=draw;
+$('blink').onpointerdown=e=>{blinking=true;e.target.setPointerCapture(e.pointerId);draw()};$('blink').onpointerup=$('blink').onpointercancel=()=>{blinking=false;draw()};
+$('export').onclick=()=>{const review={schema_version:1,case_id:D.case_id,pack_id:D.pack_id,display_material_sha256:displayDigest,reviewer:$('reviewer').value.trim(),observations:[...obs.values()]};if(review.observations.some(x=>x.review_state==='confirmed_visible_edge')&&!review.reviewer){status('请填写复核人后导出。');return}const url=URL.createObjectURL(new Blob([JSON.stringify(review,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='bone_pose_review_'+D.case_id+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);status('已导出。它是复核观测，不是已接受的配准矩阵。')};
+for(const r of D.references){const i=new Image();i.src=r.url;i.alt=r.name;$('refs').append(i)}
+updateList();refreshSelection();
+}catch(error){document.getElementById('status').textContent='材料初始化失败：'+error.message;document.querySelectorAll('button').forEach(b=>b.disabled=true);}})();
+</script></html>

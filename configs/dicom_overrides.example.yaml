@@ -1,0 +1,6 @@
+cases:
+  - case_id: "1234567"
+    ct_series_uid: "replace-with-SeriesInstanceUID"
+    localizer_series_uid: "replace-with-SeriesInstanceUID"
+    xa_series_uid: "replace-with-SeriesInstanceUID"
+    xa_frame_index: 0

@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CT–DR 物理配准三维查看器</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "./vendor/three.module.min.js",
+          "three/addons/": "./vendor/addons/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">DICOM LPS · 毫米</p>
+          <h1>CT–DR 物理配准三维查看器</h1>
+        </div>
+        <div class="topbar-status">
+          <span id="quality-badge" class="badge badge-loading">正在加载</span>
+          <span class="research-warning">仅供科研 · 未经临床验证</span>
+        </div>
+      </header>
+
+      <main class="layout">
+        <aside class="panel controls-panel" aria-label="场景控制">
+          <section>
+            <h2>渲染模式</h2>
+            <label class="render-mode-row" for="render-mode">
+              <span>显示方案</span>
+              <select id="render-mode">
+                <option value="diagnostic">配准核查</option>
+                <option value="realistic">真实解剖</option>
+              </select>
+            </label>
+            <p id="render-mode-note">真实模式只改变显示，不提高配准精度。</p>
+            <label class="render-mode-row thorax-variant-row dynamic-3d-only hidden" for="thorax-variant">
+              <span>胸廓网格</span>
+              <select id="thorax-variant">
+                <option value="auto">随渲染模式</option>
+                <option value="registration">配准原网格</option>
+                <option value="display">平滑显示网格</option>
+              </select>
+            </label>
+            <p id="thorax-variant-note" class="dynamic-3d-only hidden">平滑网格只用于显示；标定、误差计算与空间配准始终使用原网格。</p>
+          </section>
+
+          <section>
+            <h2>显示对象</h2>
+            <div class="toggle-grid">
+              <label><input id="show-ct" type="checkbox" checked /> CT 三切面</label>
+              <label><input id="show-vertebrae" type="checkbox" checked /> 椎体分割</label>
+              <label><input id="show-dr" type="checkbox" checked /> DR 探测器</label>
+              <label><input id="show-frustum" type="checkbox" checked /> X 射线视锥</label>
+              <label><input id="show-landmarks" type="checkbox" checked /> 标定点</label>
+              <label><input id="show-rays" type="checkbox" checked /> 标定射线</label>
+              <label id="dynamic-xa-toggle" class="dynamic-only hidden"><input id="show-dynamic-xa" type="checkbox" checked /> 动态 XA</label>
+              <label id="vessel-mask-toggle" class="dynamic-only hidden"><input id="show-vessel-mask" type="checkbox" checked /> 血管分割</label>
+              <label class="dynamic-3d-only hidden"><input id="show-ribs" type="checkbox" checked /> CT 肋骨/胸骨</label>
+              <label class="dynamic-3d-only hidden"><input id="show-heart" type="checkbox" checked /> CT 心脏表面</label>
+              <label class="dynamic-3d-only hidden"><input id="show-vessel-3d" type="checkbox" checked /> 动态血管 3D</label>
+            </div>
+          </section>
+
+          <section>
+            <h2>CT 切片</h2>
+            <label class="range-row"><span>矢状 X</span><output id="slice-x-value">–</output><input id="slice-x" type="range" min="0" max="1" step="1" /></label>
+            <label class="range-row"><span>冠状 Y</span><output id="slice-y-value">–</output><input id="slice-y" type="range" min="0" max="1" step="1" /></label>
+            <label class="range-row"><span>轴位 Z</span><output id="slice-z-value">–</output><input id="slice-z" type="range" min="0" max="1" step="1" /></label>
+            <div class="preset-row" id="window-presets">
+              <button type="button" data-window="bone" class="active">骨窗</button>
+              <button type="button" data-window="lung">肺窗</button>
+              <button type="button" data-window="mediastinal">纵隔窗</button>
+            </div>
+            <label class="number-row"><span>窗位</span><input id="window-center" type="number" value="300" step="10" /></label>
+            <label class="number-row"><span>窗宽</span><input id="window-width" type="number" value="1800" min="1" step="10" /></label>
+            <label class="range-row compact"><span>切片透明度</span><output id="ct-opacity-value">0.82</output><input id="ct-opacity" type="range" min="0" max="1" value="0.82" step="0.01" /></label>
+          </section>
+
+          <section>
+            <h2>表面与 DR</h2>
+            <label class="range-row compact"><span>椎体透明度</span><output id="mesh-opacity-value">0.58</output><input id="mesh-opacity" type="range" min="0.05" max="1" value="0.58" step="0.01" /></label>
+            <label class="range-row compact"><span>DR 透明度</span><output id="dr-opacity-value">0.76</output><input id="dr-opacity" type="range" min="0.05" max="1" value="0.76" step="0.01" /></label>
+            <label class="range-row compact dynamic-3d-only hidden"><span>肋骨透明度</span><output id="rib-opacity-value">0.34</output><input id="rib-opacity" type="range" min="0.03" max="1" value="0.34" step="0.01" /></label>
+            <label class="range-row compact dynamic-3d-only hidden"><span>心脏透明度</span><output id="heart-opacity-value">0.16</output><input id="heart-opacity" type="range" min="0.02" max="0.8" value="0.16" step="0.01" /></label>
+          </section>
+
+          <section id="xa-multiseries-controls" class="multiseries-only hidden">
+            <h2>七序列 XA</h2>
+            <label class="number-row"><span>活动序列</span><select id="xa-run-select" aria-label="活动 XA 序列"></select></label>
+            <div class="toggle-grid">
+              <label><input id="show-all-xa-planes" type="checkbox" /> 全部投影平面</label>
+              <label><input id="show-all-vessel-meshes" type="checkbox" /> 全部动态 Mesh</label>
+              <label><input id="show-group-rca" type="checkbox" checked /> 右冠脉 S1–S2</label>
+              <label><input id="show-group-lca" type="checkbox" checked /> 左冠脉 S3–S6</label>
+              <label><input id="show-group-locator" type="checkbox" checked /> 定位序列 S7</label>
+            </div>
+            <div class="cine-toolbar multiseries-playback-toolbar">
+              <select id="multiseries-play-mode" aria-label="多序列播放模式">
+                <option value="single">单序列</option>
+                <option value="independent">全部动态（未同步）</option>
+                <option value="estimated" disabled>估计相位同步</option>
+              </select>
+              <button id="multiseries-play" type="button">播放全部</button>
+              <select id="multiseries-speed" aria-label="多序列播放速度">
+                <option value="0.5">0.5×</option>
+                <option value="1" selected>1×</option>
+                <option value="2">2×</option>
+              </select>
+            </div>
+            <label class="inline-check"><input id="multiseries-full-clip" type="checkbox" /> 播放完整采集</label>
+            <div id="multiseries-frame-status" class="run-frame-status" aria-live="polite"></div>
+            <div class="phase-panel">
+              <h3>估计相位质量与人工锚点</h3>
+              <p id="phase-mode-status" class="phase-mode-status" aria-live="polite">正在读取估计相位报告…</p>
+              <div id="phase-confidence-list" class="phase-confidence-list" aria-live="polite"></div>
+              <label class="phase-select-row"><span>锚点序列</span><select id="phase-anchor-run" disabled aria-label="人工锚点序列"></select></label>
+              <label class="range-row compact"><span>锚点帧（0 起）</span><output id="phase-anchor-frame-value">—</output><input id="phase-anchor-frame" type="range" min="0" max="0" value="0" step="1" disabled /></label>
+              <div class="phase-action-row">
+                <button id="phase-anchor-apply" type="button" disabled>应用并确认</button>
+                <button id="phase-overrides-export" type="button" disabled>导出锚点 JSON</button>
+              </div>
+            </div>
+            <p id="xa-nonsync-warning" class="projection-warning">7 段 XA 为先后采集且没有 ECG 同步；同场显示不代表同一心动时刻，也不是临床级四维重建。</p>
+          </section>
+
+          <section id="dynamic-controls" class="dynamic-only hidden">
+            <h2>动态冠脉 XA</h2>
+            <div class="cine-toolbar">
+              <button id="cine-play" type="button">播放</button>
+              <span id="cine-time">0.00 s</span>
+              <select id="cine-speed" aria-label="播放速度">
+                <option value="0.5">0.5×</option>
+                <option value="1" selected>1×</option>
+                <option value="2">2×</option>
+              </select>
+            </div>
+            <label class="range-row"><span>帧</span><output id="cine-frame-value">1 / 1</output><input id="cine-frame" type="range" min="0" max="0" value="0" step="1" /></label>
+            <label class="range-row compact"><span>XA 透明度</span><output id="cine-opacity-value">0.82</output><input id="cine-opacity" type="range" min="0" max="1" value="0.82" step="0.01" /></label>
+            <label class="range-row compact"><span>血管透明度</span><output id="vessel-opacity-value">0.78</output><input id="vessel-opacity" type="range" min="0" max="1" value="0.78" step="0.01" /></label>
+            <label class="range-row compact dynamic-3d-only hidden"><span>3D Mesh 透明度</span><output id="vessel-3d-opacity-value">0.96</output><input id="vessel-3d-opacity" type="range" min="0.1" max="1" value="0.96" step="0.01" /></label>
+            <label class="range-row compact"><span>概率阈值</span><output id="vessel-threshold-value">0.35</output><input id="vessel-threshold" type="range" min="0.05" max="0.95" value="0.35" step="0.01" /></label>
+            <label class="inline-check"><input id="show-centerline" type="checkbox" checked /> 显示黄色中心线</label>
+            <label class="inline-check"><input id="show-repair-comparison" type="checkbox" /> 同帧基线/修复分割并排对照</label>
+            <label class="inline-check"><input id="show-low-confidence-links" type="checkbox" disabled /> 显示低置信度修复连线</label>
+            <label class="inline-check"><input id="show-topology-nodes" type="checkbox" /> 显示拓扑节点编号</label>
+            <p id="vessel-quality-status" class="vessel-quality-status" aria-live="polite">正在读取血管修复质量…</p>
+            <p class="projection-warning">黄色3D管道使用CT心脏近侧表面补深度；单视角XA没有唯一深度，因此这是2.5D科研估计，不可用于临床导航。</p>
+          </section>
+
+          <section>
+            <h2>标准视角</h2>
+            <div class="view-grid">
+              <button type="button" data-view="ap">AP 正视</button>
+              <button type="button" data-view="lateral">侧位</button>
+              <button type="button" data-view="ray">沿射线</button>
+              <button type="button" data-view="detector">探测器正视</button>
+              <button id="dynamic-detector-view" class="dynamic-only hidden" type="button" data-view="dynamic-detector">动态 XA 正视</button>
+              <button class="dynamic-3d-only hidden" type="button" data-view="vessel-3d">3D 血管聚焦</button>
+              <button type="button" data-view="fit">显示全部</button>
+              <button type="button" data-view="reset">重置</button>
+            </div>
+          </section>
+
+          <section class="legend">
+            <h2>方向与标记</h2>
+            <p><span class="swatch swatch-x"></span> +X = 左（L）</p>
+            <p><span class="swatch swatch-y"></span> +Y = 后（P）</p>
+            <p><span class="swatch swatch-z"></span> +Z = 头（S）</p>
+            <p><span class="swatch swatch-observed"></span> DR 医生标注</p>
+            <p><span class="swatch swatch-predicted"></span> CT 点重投影</p>
+          </section>
+        </aside>
+
+        <section id="viewport-shell" class="viewport-shell" aria-label="三维场景">
+          <canvas id="viewport"></canvas>
+          <div id="repair-comparison-panel" class="repair-comparison-panel hidden" aria-label="同帧基线与修复分割并排对照">
+            <figure>
+              <figcaption>基线分割</figcaption>
+              <canvas id="baseline-repair-preview" aria-label="当前帧基线血管分割"></canvas>
+            </figure>
+            <figure>
+              <figcaption>修复分割</figcaption>
+              <canvas id="repaired-repair-preview" aria-label="当前帧修复血管分割"></canvas>
+            </figure>
+          </div>
+          <div id="loading" class="loading-card">
+            <div class="spinner"></div>
+            <p id="loading-message">正在读取场景几何…</p>
+          </div>
+          <div class="viewport-hint">左键旋转 · 右键平移 · 滚轮缩放 · 点击椎体或标定点查看详情</div>
+        </section>
+
+        <aside class="panel info-panel" aria-label="配准信息">
+          <section>
+            <h2>质量门</h2>
+            <dl class="metric-grid">
+              <div><dt>状态</dt><dd id="metric-status">–</dd></div>
+              <div><dt>RMS</dt><dd id="metric-rms">–</dd></div>
+              <div><dt>最大残差</dt><dd id="metric-max">–</dd></div>
+              <div><dt>候选</dt><dd id="metric-candidate">–</dd></div>
+            </dl>
+            <p id="quality-reasons" class="quality-note">尚未载入</p>
+          </section>
+
+          <section>
+            <h2>当前选择</h2>
+            <div id="selection" class="selection-card">
+              <p class="muted">点击椎体、三维标定点或 DR 平面。</p>
+            </div>
+          </section>
+
+          <section>
+            <h2>几何摘要</h2>
+            <dl class="summary-list">
+              <div><dt>病例</dt><dd id="case-id">–</dd></div>
+              <div><dt>CT</dt><dd id="ct-size">–</dd></div>
+              <div><dt>XA</dt><dd id="xa-size">–</dd></div>
+              <div><dt>SDD / SOD</dt><dd id="source-distances">–</dd></div>
+              <div><dt>主 / 次角</dt><dd id="gantry-angles">–</dd></div>
+            </dl>
+          </section>
+
+          <section class="orientation-check">
+            <h2>方向检查</h2>
+            <p>探测器正视时，T1 → T2 → Z → Q 应从图像上方向下排列。绿色圈为原始医生点，洋红圈为 CT 三维点重投影。</p>
+          </section>
+
+          <section id="dynamic-quality" class="orientation-check dynamic-only hidden">
+            <h2>动态 XA 质量</h2>
+            <dl class="summary-list">
+              <div><dt>姿态</dt><dd id="dynamic-pose-status">–</dd></div>
+              <div><dt>序列</dt><dd id="dynamic-series-size">–</dd></div>
+              <div><dt>时序 IoU</dt><dd id="dynamic-temporal-iou">–</dd></div>
+              <div><dt>复核帧</dt><dd id="dynamic-review-frames">–</dd></div>
+            </dl>
+            <p id="dynamic-quality-reasons">–</p>
+          </section>
+
+          <section class="orientation-check dynamic-3d-only hidden">
+            <h2>动态血管 3D 质量</h2>
+            <dl class="summary-list">
+              <div><dt>深度状态</dt><dd id="dynamic-depth-status">–</dd></div>
+              <div><dt>主点修正</dt><dd id="dynamic-principal-shift">–</dd></div>
+              <div><dt>心脏覆盖</dt><dd id="dynamic-heart-coverage">–</dd></div>
+              <div><dt>双视角尝试</dt><dd id="dynamic-multiview">–</dd></div>
+            </dl>
+            <p id="dynamic-depth-reasons">–</p>
+          </section>
+        </aside>
+      </main>
+
+      <footer>
+        该页面用于核查物理坐标、朝向与标定残差，不代表全局解剖结构已达到临床级配准。
+      </footer>
+    </div>
+    <script>
+      window.addEventListener("error", (event) => {
+        const message = document.getElementById("loading-message");
+        if (message) message.textContent = `入口错误：${event.message}`;
+      });
+      window.addEventListener("unhandledrejection", (event) => {
+        const message = document.getElementById("loading-message");
+        if (message) message.textContent = `加载失败：${event.reason?.message ?? event.reason}`;
+      });
+    </script>
+    <script type="module">
+      import("./app.js?v=9").catch((error) => {
+        console.error(error);
+        const message = document.getElementById("loading-message");
+        if (message) message.textContent = `模块加载失败：${error.message}`;
+      });
+    </script>
+  </body>
+</html>

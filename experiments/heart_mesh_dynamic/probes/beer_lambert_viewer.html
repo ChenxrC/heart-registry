@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CT心脏 Beer–Lambert 投影验证</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,"Microsoft YaHei",sans-serif;background:#101920;color:#e8eff3}
+*{box-sizing:border-box}body{margin:0;padding:24px;max-width:1800px;margin-inline:auto}
+h1{font-size:23px;margin:0 0 8px;font-weight:600}p{line-height:1.65;margin:8px 0}
+.warning{padding:12px 16px;background:#342c1c;color:#ffe0a0;border-left:3px solid #e3b654;margin:16px 0}
+.controls{display:flex;gap:20px;flex-wrap:wrap;align-items:center;margin:18px 0}
+label{display:flex;gap:8px;align-items:center;flex-wrap:wrap}select,button,input{font:inherit}
+select,button{background:#1c2a35;color:#e8eff3;border:1px solid #49606d;border-radius:5px;padding:8px}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid #4ce0df;outline-offset:3px}
+input[type=range]{width:170px}output{font-variant-numeric:tabular-nums;min-width:60px}
+.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}
+figure{margin:0;min-width:0}figcaption{min-height:50px;line-height:1.5;margin-bottom:8px;font-weight:600}
+small{font-weight:400;color:#b6c5d0}canvas{width:100%;height:auto;display:block;background:#000;aspect-ratio:1}
+.status{font-size:14px;color:#c4d2db;line-height:1.7;margin:14px 0}a{color:#74e0df}
+.legend{display:flex;justify-content:space-between;font-size:13px;margin-top:7px;color:#bacbd5}
+details{margin-top:18px;line-height:1.7}li{margin:5px 0}
+@media(max-width:1100px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){body{padding:14px}.grid{grid-template-columns:1fr}.controls{gap:12px}}
+</style>
+</head>
+<body>
+<h1>CT心脏 → Beer–Lambert投影 → 原始XA对照</h1>
+<p>复用已有患者心脏闭合mesh，在同一源点、探测器及原生像素坐标下比较。无灯光、表面材质或二维拖动。</p>
+<div class="warning"><strong>科研诊断，非配准验收：</strong>两套相机均未通过独立解剖验证。心脏mesh固定不动；播放的是原始XA，不是重建出的心脏运动。μ为均匀组织演示参数，不是设备标定值。</div>
+<div class="controls">
+ <label>序列 <select id="series"><option value="series_01">S1 · series_01</option><option value="series_02">S2 · series_02</option></select></label>
+ <label>相机 <select id="camera"><option value="inherited">继承的初始相机（未验收）</option><option value="static_candidate">此前2DOF骨性搜索候选（未验收）</option></select></label>
+ <button id="play" type="button" aria-pressed="false">播放XA</button>
+ <label>帧 <input id="frame" type="range" min="0" max="30" value="20" aria-label="原始XA帧"><output id="frameValue"></output></label>
+</div>
+<div class="controls">
+ <label>μ（1/mm）<input id="mu" type="range" min="0.001" max="0.03" step="0.001" value="0.010"><output id="muValue">0.010</output></label>
+ <label>叠加不透明度 <input id="opacity" type="range" min="0" max="0.8" step="0.05" value="0.25"><output id="opacityValue">0.25</output></label>
+</div>
+<main class="grid">
+ <figure><figcaption>① 原始XA<br><small>保留软组织、骨骼与造影剂背景</small></figcaption><canvas id="xa" width="512" height="512" aria-label="原始XA图像"></canvas></figure>
+ <figure><figcaption>② 心脏内射线总长度 L<br><small>多个进入/离开区间分别累加，单位mm</small></figcaption><canvas id="length" width="512" height="512" aria-label="心脏穿行厚度"></canvas><div class="legend"><span>0 mm（黑）</span><span id="lengthMax"></span></div></figure>
+ <figure><figcaption>③ 透射率 I/I₀ = exp(−μL)<br><small>仅心脏贡献；不是完整胸部DRR</small></figcaption><canvas id="transmission" width="512" height="512" aria-label="Beer Lambert透射率"></canvas><div class="legend"><span>0（黑，强衰减）</span><span>1（白，无心脏衰减）</span></div></figure>
+ <figure><figcaption>④ XA + 模型轮廓/衰减叠加<br><small>青色为模型预测，不是医生标注或误差图</small></figcaption><canvas id="overlay" width="512" height="512" aria-label="模型投影与XA叠加"></canvas></figure>
+</main>
+<div class="status" id="status" role="status" aria-live="polite">正在载入…</div>
+<details><summary>如何解读差异与原始数值</summary>
+<ul>
+<li>改变μ只改变透射灰度，不改变mesh或投影轮廓。改变XA帧时，模型投影保持静态。</li>
+<li>没有模拟肺、肋骨、膈肌、造影剂、散射、能谱和设备增强，因此全图灰度不相同是预期现象。</li>
+<li>当前不能把青线外的所有差异归因于心脏形变：初始位姿、CT/XA时相及分割范围也可能不同。</li>
+<li>冠脉局部视野可能裁掉心脏；图像边框不作为心缘描画。未提取/确认真实XA心缘，故没有心缘误差或三维TRE。</li>
+<li>厚度图采用所有相机共用的显示范围，不做逐图自动拉伸；浏览器厚度精度0.01mm，NPZ保留float32数值。</li>
+</ul>
+<p><a id="numbers" href="#">下载当前相机的投影数值 NPZ</a> · <a href="report.json">完整计算/来源报告</a> · <a href="summary.md">实验说明</a></p>
+</details>
+<script src="data.js"></script>
+<script>
+'use strict';
+const data=window.HEART_PROJECTION_DATA;
+const byId=id=>document.getElementById(id);
+const controls=['series','camera','frame','mu','opacity'].map(byId);
+const contexts=Object.fromEntries(['xa','length','transmission','overlay'].map(id=>[id,byId(id).getContext('2d',{willReadFrequently:true})]));
+const height=data.image_hw[0],width=data.image_hw[1],pixelCount=height*width;
+const maps=new Map(),imageCache=new Map();
+let timer=null,generation=0;
+for(const projection of data.projections){
+ const raw=atob(projection.length_base64_u16_le),bytes=Uint8Array.from(raw,c=>c.charCodeAt(0)),view=new DataView(bytes.buffer);
+ if(bytes.byteLength!==pixelCount*2)throw new Error('厚度图尺寸错误');
+ const values=new Float32Array(pixelCount);
+ for(let i=0;i<pixelCount;i++)values[i]=view.getUint16(i*2,true)/100;
+ maps.set(projection.run_id+'/'+projection.camera_id,{values,report:projection.report});
+}
+byId('lengthMax').textContent=data.thickness_display_max_mm+' mm（白）';
+function currentSeries(){return data.series.find(s=>s.run_id===byId('series').value)}
+function stop(){if(timer!==null)clearInterval(timer);timer=null;byId('play').textContent='播放XA';byId('play').setAttribute('aria-pressed','false')}
+async function draw(){
+ const token=++generation,series=currentSeries(),frame=Number(byId('frame').value),mu=Number(byId('mu').value),opacity=Number(byId('opacity').value);
+ const projection=maps.get(series.run_id+'/'+byId('camera').value),length=projection.values;
+ byId('frameValue').textContent=frame+' / '+(series.frames.length-1);
+ byId('muValue').textContent=mu.toFixed(3);byId('opacityValue').textContent=opacity.toFixed(2);
+ const imageKey=series.run_id+'/'+frame;
+ if(!imageCache.has(imageKey))imageCache.set(imageKey,new Promise((resolve,reject)=>{const img=new Image();img.onload=()=>resolve(img);img.onerror=()=>reject(new Error('XA帧读取失败'));img.src=series.frames[frame]}));
+ const img=await imageCache.get(imageKey);if(token!==generation)return;
+ if(img.width!==width||img.height!==height)throw new Error('XA帧尺寸不一致');
+ contexts.xa.drawImage(img,0,0);const original=contexts.xa.getImageData(0,0,width,height);
+ const lengthImage=contexts.length.createImageData(width,height),transmission=contexts.transmission.createImageData(width,height),overlay=contexts.overlay.createImageData(width,height);
+ for(let i=0;i<pixelCount;i++){
+  const row=Math.floor(i/width),col=i%width,base=i*4,l=length[i],t=Math.exp(-mu*l);
+  const gray=Math.round(255*Math.min(1,l/data.thickness_display_max_mm));
+  for(let c=0;c<3;c++){lengthImage.data[base+c]=gray;transmission.data[base+c]=Math.round(255*t);overlay.data[base+c]=original.data[base+c]}
+  const interior=row>0&&row<height-1&&col>0&&col<width-1;
+  const boundary=interior&&l>0&&(length[i-1]===0||length[i+1]===0||length[i-width]===0||length[i+width]===0);
+  if(l>0){const a=opacity*(1-t);for(let c=0;c<3;c++)overlay.data[base+c]=Math.round(original.data[base+c]*(1-a)+[35,235,230][c]*a)}
+  if(boundary){overlay.data[base]=35;overlay.data[base+1]=235;overlay.data[base+2]=230}
+  lengthImage.data[base+3]=transmission.data[base+3]=overlay.data[base+3]=255;
+ }
+ contexts.length.putImageData(lengthImage,0,0);contexts.transmission.putImageData(transmission,0,0);contexts.overlay.putImageData(overlay,0,0);
+ const report=projection.report;
+ byId('status').textContent=`${series.run_id} · 第${frame}帧（零起始） · 采集相对时间 ${(frame*series.frame_duration_ms/1000).toFixed(3)}s · 静态模型占画面 ${(report.fov_coverage_fraction*100).toFixed(2)}%（不是重合率） · 最大厚度 ${report.maximum_path_length_mm.toFixed(2)}mm · 相机未验收`;
+ byId('numbers').href=series.run_id+'_'+byId('camera').value+'_projection.npz';
+ window.probeState={run:series.run_id,camera:byId('camera').value,frame,mu,opacity,staticMesh:true,geometryAccepted:false};
+}
+function redraw(){draw().catch(error=>{stop();byId('status').textContent=error.message;byId('status').setAttribute('role','alert');console.error(error)})}
+byId('series').addEventListener('change',()=>{stop();const series=currentSeries();byId('frame').max=series.frames.length-1;byId('frame').value=series.reference_frame;redraw()});
+for(const id of ['camera','frame','mu','opacity'])byId(id).addEventListener('input',redraw);
+byId('play').addEventListener('click',()=>{if(timer!==null){stop();return}byId('play').textContent='暂停XA';byId('play').setAttribute('aria-pressed','true');timer=setInterval(()=>{byId('frame').value=(Number(byId('frame').value)+1)%currentSeries().frames.length;redraw()},currentSeries().frame_duration_ms)});
+document.addEventListener('visibilitychange',()=>{if(document.hidden)stop()});
+redraw();
+</script>
+</body>
+</html>

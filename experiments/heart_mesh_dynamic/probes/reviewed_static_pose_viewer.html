@@ -1,0 +1,17 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="data:,"><title>S2 骨缘约束刚性修正</title>
+<style>:root{color-scheme:dark;font-family:"Microsoft YaHei",sans-serif;background:#101c26;color:#e4edf5}body{max-width:1536px;margin:24px auto;padding:0 18px}h1{font-size:25px}.warn{padding:14px;border-left:4px solid #ffc66b;background:#352c1c;color:#ffda95;line-height:1.7}p{line-height:1.7}img{display:block;width:100%;height:auto;border:1px solid #365064;border-radius:6px}table{border-collapse:collapse;width:100%;margin:16px 0}th,td{text-align:left;padding:10px;border-bottom:1px solid #365064}a{color:#87dff3}h2{font-size:19px;margin-top:28px}.metrics{padding:12px;background:#172b3b}small{color:#b7c8d6}</style>
+<h1>S2：基于已复核骨缘的三维刚性修正试验</h1>
+<div class="warn">研究性候选，绝对几何尚未验收。只使用 T3/T5 拟合；T4 留出，不参与优化或候选选择。仅横移、纵移和绕视线转动，不拟合尺度/深度，不改变骨骼或心脏形状；不更新 S1 或旧三维页面。</div>
+<p id="params" class="metrics"></p><p id="status"></p>
+<h2>骨缘距离：原生 512×512 像素</h2><table><thead><tr><th>结构</th><th>用途</th><th>修正前平均(px)</th><th>修正后平均(px)</th><th>修正后p95(px)</th></tr></thead><tbody id="metrics"></tbody></table>
+<p>单向距离：人工可见骨缘 → 同编号 CT 整椎骨投影外缘。不是完整 Dice、真实三维 TRE 或临床精度。整椎骨包含附件，可能与 XA 可辨认椎体边缘范围不同；不能假定所有残差都来自刚性位姿。</p>
+<img src="bone_before_after.png" alt="S2用户骨缘和CT模型在刚性修正前后的原生像素叠加">
+<h2>同一个刚性修正下的静态心脏投影（条件性展示）</h2>
+<p>这不是心脏动态重建。心脏形状没有改变，只改变固定投影位姿；均匀包络透射率 μ=0.010/mm 未经设备标定。青线是 CT 模型边缘，不是从 XA 检测出的心缘；没有可信心缘标签，故不报告患者心缘误差。</p>
+<img src="heart_static_before_after.png" alt="静态CT心脏在相同刚性修正前后的Beer-Lambert投影和XA叠加">
+<p><a href="report.json">完整报告</a> · <a href="rigid_transform_lps.json">研究用刚性矩阵</a> · <a href="camera_after_unaccepted.json">未验收相机</a> · <a href="fit_result_frozen.json">留出评价前冻结的拟合结果</a></p><small>矩阵与修正相机是两种等价用法：原相机+移动CT，或修正相机+原CT；不能同时套用，避免重复变换。</small>
+<script src="data.js"></script><script>
+const D=window.STATIC_POSE_RESULT;document.getElementById('params').textContent=`相对此前平移候选：u方向 ${D.parameters[0].toFixed(3)} mm；v方向 ${D.parameters[1].toFixed(3)} mm；绕视线 ${D.parameters[2].toFixed(3)}°。`;
+document.getElementById('status').textContent=`搜索边界：${D.at_bound?'触边，需单列不确定性':'未触边'}；优化器各阶段收敛标记：${D.converged?'全部达到停止条件':'存在预算用尽或未收敛阶段，不能视为已找到最优位姿'}。这些都是工程状态，不是临床通过。`;
+for(const after of D.after){const before=D.before.find(x=>x.structure_id===after.structure_id);const row=document.createElement('tr');for(const value of[after.structure_id,after.split==='fit'?'拟合':'留出',before.mean_px,after.mean_px,after.p95_px]){const cell=document.createElement('td');cell.textContent=typeof value==='number'?value.toFixed(2):value===null?'不可用':value;row.append(cell)}document.getElementById('metrics').append(row)}
+</script></html>

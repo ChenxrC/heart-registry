@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CT–XA 二维特征点复核</title>
+<style>
+:root{color-scheme:dark;font:15px/1.55 system-ui,"Microsoft YaHei",sans-serif;background:#0e1720;color:#e0e8f0}*{box-sizing:border-box}body{margin:0;padding:20px;max-width:1500px;margin-inline:auto}h1{font-size:24px;margin:0}h2{font-size:17px;margin:0 0 10px}p{margin:8px 0}.muted{color:#a5b8cb}.warning{padding:10px 14px;border-left:4px solid #e5b45d;background:#2a251c;color:#ffe1a4;margin-block:14px}.bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-block:10px}button,input,select{font:inherit;border:1px solid #465767;border-radius:5px;background:#192936;color:inherit;padding:6px 10px}button{cursor:pointer}button:hover{background:#284253}button.active{outline:2px solid #51dac0}input[type=range]{padding:0;flex:1;min-width:180px}input[type=text],select{max-width:100%}main{display:grid;grid-template-columns:minmax(420px,1.5fr) minmax(320px,1fr);gap:20px}.panel{background:#15222d;border:1px solid #304354;border-radius:9px;padding:15px}canvas{display:block;width:100%;height:auto;background:#000;touch-action:none;cursor:crosshair}label{display:inline-flex;gap:7px;align-items:center}select#points{width:100%;height:175px;margin:10px 0}#label{width:100%}#message{min-height:28px;color:#8ce7d5;white-space:pre-wrap}#geometry{font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere}#marks{max-height:130px;overflow:auto;font-size:13px}.legend{font-size:13px;color:#b6c5d4}.green{color:#5ce6c8}.yellow{color:#ffd969}@media(max-width:850px){body{padding:10px}main{grid-template-columns:1fr}}button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #67cfed;outline-offset:2px}
+</style>
+<header>
+  <h1>CT–XA 二维特征点复核</h1>
+  <p id="case" class="muted"></p>
+  <div class="warning">科研复核工具：人工标记仅确认指定帧的二维位置，不自动确认整条轨迹、心动相位或三维深度。当前患者三维优化未启用。</div>
+  <div class="bar">
+    <label>序列 <select id="series" aria-label="序列"></select></label>
+    <label>复核人编号 <input id="reviewer" type="text" placeholder="可先保存草稿；纳入点前请填写"></label>
+    <button id="draft">下载草稿 JSON</button><button id="submit">下载复核 JSON</button>
+    <label>导入续审 <input id="import" type="file" accept=".json,application/json"></label>
+  </div>
+  <p id="message" role="status" aria-live="polite"></p>
+</header>
+<main>
+  <section class="panel">
+    <div class="bar"><button id="prev" aria-label="上一帧">上一帧</button><button id="play">播放</button><button id="next" aria-label="下一帧">下一帧</button><button id="reference">参考帧</button><span id="frameLabel"></span></div>
+    <div class="bar"><label>帧 <input id="frame" type="range" min="0" value="0" aria-label="帧"></label><label><input id="showAuto" type="checkbox" checked>自动候选</label></div>
+    <canvas id="image" width="512" height="512" aria-label="XA 原生坐标复核画布"></canvas>
+    <p class="legend">灰：自动建议（未复核）　<span class="yellow">黄：选中点</span>　<span class="green">绿：当前帧人工标记</span><br>默认点击选择附近候选；“点击修正位置”后点击图像写入当前帧。无隐式上下翻转，坐标为原生列 x、行 y。</p>
+  </section>
+  <aside class="panel">
+    <h2>1. 选择候选，或补一个点</h2>
+    <button id="add">新增人工点（再点图像）</button>
+    <select id="points" size="6" aria-label="特征点"></select>
+    <p id="pointInfo" class="muted"></p>
+    <h2>2. 核对当前帧</h2>
+    <div class="bar"><button id="mark">点击修正位置</button><button id="confirm">确认当前建议坐标</button></div>
+    <div class="bar"><button id="invisible">本帧不可见</button><button id="uncertain">本帧不确定</button><button id="removeMark">撤销本帧标记</button></div>
+    <div id="marks"></div>
+    <h2 style="margin-top:18px">3. 设置解剖身份与用途</h2>
+    <label for="label">血管/分支名称（仅人工确认）</label><input id="label" type="text" placeholder="例如：右冠近段某分叉；不要把导管当血管">
+    <div class="bar"><label>处理 <select id="decision"><option value="pending">待复核</option><option value="include">纳入二维跟踪种子</option><option value="exclude">排除</option></select></label>
+    <label>排除原因 <select id="reason"><option value="">无</option><option value="catheter">导管</option><option value="background">骨/背景</option><option value="ambiguous">身份不清</option><option value="tracking_error">跟踪错误</option><option value="other">其他</option></select></label></div>
+    <p class="muted">纳入需填写复核人、名称，且至少明确确认一帧坐标。每个新增确认都只作用于当前帧；看不清请留缺失。</p>
+    <details><summary>当前序列几何检查（不等于校准通过）</summary><div id="geometry"></div></details>
+  </aside>
+</main>
+<p class="muted">纯本地页面，无远程依赖、不上传影像。刷新不自动保存，请及时下载草稿。导入复核后 Python 仍会再次验证哈希和坐标；本工具不认证复核人身份。</p>
+<script src="data.js"></script><script src="review.js"></script>
+</html>
